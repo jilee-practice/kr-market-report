@@ -8,8 +8,12 @@
 **클라우드 예약 Claude 에이전트**가 수집된 수치를 보고 직접 작성한다. 그래서 별도 LLM API 키가 필요 없다.
 
 1. **데이터 수집**: `python3 -m scripts.collect_data [--date YYYY-MM-DD]`
-   FRED(미국 금리) / EIA(유가) / 한국수출입은행(환율) / KIS(KOSPI·KOSDAQ) / yfinance(미국 지수·관심 종목)를
+   FRED(미국 금리) / EIA(유가) / 한국수출입은행(환율) / yfinance(KOSPI·KOSDAQ, 미국 지수, 관심 종목)를
    조회해 `data/market_data_<date>.json` 으로 저장한다.
+
+   KOSPI/KOSDAQ은 원래 KIS Open API(`scripts/kis_client.py`)로 받았지만, 클라우드 예약 에이전트
+   환경에서 KIS가 쓰는 비표준 포트(9443)가 아웃바운드 프록시에 막혀 yfinance(`^KS11`/`^KQ11`)로
+   대체했다. KIS 접속이 가능한 환경(로컬 등)에서는 `kis_client.py`를 직접 써도 된다.
 
 2. **해석 작성**: 에이전트가 `data/market_data_<date>.json` 을 읽고, 아래 스키마에 맞춰
    `data/narrative_<date>.json` 을 직접 작성한다. (섹션별 문구, 리스크, 이벤트, 체크포인트 등)
@@ -62,3 +66,17 @@ cp config/secrets.env.example config/secrets.env  # 값 채우기
 3. `python3 -m scripts.send_infographic --narrative data/narrative_<date>.json` 실행
 
 시크릿(API 키, Gmail 앱 비밀번호)은 클라우드 실행 환경에 별도로 주입해야 한다 (로컬 `config/secrets.env`는 gitignore 대상).
+
+### 네트워크 허용 도메인 (claude.ai Environment 설정)
+
+이 환경(`env_01SooL2oCM2yYvSMYtzLBhGc`, "Default")은 아웃바운드가 기본 차단되어 있어
+Network Access를 "사용자 정의"로 설정하고 아래 도메인을 허용해야 한다:
+
+- `api.stlouisfed.org` (FRED)
+- `api.eia.gov` (EIA)
+- `oapi.koreaexim.go.kr` (한국수출입은행)
+- `query1.finance.yahoo.com`, `query2.finance.yahoo.com` (yfinance — KOSPI/KOSDAQ/미국 지수/관심 종목)
+
+`openapi.koreainvestment.com`(KIS)은 비표준 포트(9443)를 쓰는데, 이 프록시는 포트 지정을
+지원하지 않아 도메인을 허용해도 TLS 핸드셰이크 단계에서 계속 막힌다 — 그래서 클라우드
+파이프라인은 KIS 대신 yfinance로 KOSPI/KOSDAQ을 받는다 (위 참고).
