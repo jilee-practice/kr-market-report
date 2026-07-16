@@ -8,9 +8,15 @@ KOSPI/KOSDAQ도 KIS Open API가 클라우드 실행 환경에서 비표준 포�
 from __future__ import annotations
 
 import os
+import time
 from dataclasses import dataclass
 
 import yfinance as yf
+
+# 티커를 연속으로 빠르게 요청하면 Yahoo Finance가 봇 트래픽으로 보고 429를 돌려주는
+# 경우가 있어, 요청 사이 간격을 두고 실패 시 짧게 재시도한다.
+_REQUEST_DELAY_SECONDS = 1.5
+_MAX_ATTEMPTS = 3
 
 # ticker: 표시 이름
 KR_INDICES = {
@@ -63,27 +69,43 @@ class Quote:
 
 
 def _fetch_quote(ticker: str, label: str) -> Quote | None:
-    hist = yf.Ticker(ticker).history(period="5d")
-    if len(hist) < 2:
-        return None
-    latest = hist.iloc[-1]
-    prev = hist.iloc[-2]
-    price = float(latest["Close"])
-    prev_close = float(prev["Close"])
-    change = price - prev_close
-    change_pct = change / prev_close * 100
-    return Quote(ticker=ticker, label=label, price=price, change=change, change_pct=change_pct)
+    last_error: Exception | None = None
+    for attempt in range(1, _MAX_ATTEMPTS + 1):
+        try:
+            hist = yf.Ticker(ticker).history(period="5d")
+            if len(hist) < 2:
+                return None
+            latest = hist.iloc[-1]
+            prev = hist.iloc[-2]
+            price = float(latest["Close"])
+            prev_close = float(prev["Close"])
+            change = price - prev_close
+            change_pct = change / prev_close * 100
+            return Quote(ticker=ticker, label=label, price=price, change=change, change_pct=change_pct)
+        except Exception as exc:  # noqa: BLE001 - retry on any transient fetch failure (e.g. rate limiting)
+            last_error = exc
+            if attempt < _MAX_ATTEMPTS:
+                time.sleep(_REQUEST_DELAY_SECONDS * attempt * 2)
+    raise RuntimeError(f"Failed to fetch {ticker} after {_MAX_ATTEMPTS} attempts") from last_error
+
+
+def _fetch_quotes(items: dict[str, str]) -> list[Quote]:
+    quotes = []
+    for i, (ticker, label) in enumerate(items.items()):
+        if i > 0:
+            time.sleep(_REQUEST_DELAY_SECONDS)
+        quote = _fetch_quote(ticker, label)
+        if quote is not None:
+            quotes.append(quote)
+    return quotes
 
 
 def get_us_indices() -> list[Quote]:
-    quotes = [_fetch_quote(t, label) for t, label in US_INDICES.items()]
-    return [q for q in quotes if q is not None]
+    return _fetch_quotes(US_INDICES)
 
 
 def get_watchlist() -> list[Quote]:
-    watchlist = _parse_watchlist_env()
-    quotes = [_fetch_quote(t, label) for t, label in watchlist.items()]
-    return [q for q in quotes if q is not None]
+    return _fetch_quotes(_parse_watchlist_env())
 
 
 @dataclass
@@ -98,9 +120,8 @@ class IndexPrice:
 
 
 def get_kr_indices() -> list[IndexPrice]:
-    quotes = [_fetch_quote(t, label) for t, label in KR_INDICES.items()]
+    quotes = _fetch_quotes(KR_INDICES)
     return [
         IndexPrice(index_code=q.ticker, label=q.label, price=q.price, change=q.change, change_rate=q.change_pct)
         for q in quotes
-        if q is not None
     ]
