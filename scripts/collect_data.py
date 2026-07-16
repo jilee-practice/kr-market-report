@@ -23,15 +23,25 @@ from .config import ROOT_DIR
 DATA_DIR = ROOT_DIR / "data"
 
 
+def _best_effort(label: str, fn):
+    """yfinance(Yahoo Finance)는 프록시/봇차단 이슈로 가끔 통째로 실패할 수 있어,
+    이 소스가 죽어도 FX/금리/유가 등 나머지는 정상 발송되도록 실패를 흡수한다."""
+    try:
+        return fn()
+    except Exception as exc:  # noqa: BLE001
+        print(f"[collect_data] WARNING: {label} 수집 실패, 이 섹션은 비워둡니다: {exc}")
+        return []
+
+
 def collect(report_date: date | None = None) -> dict:
     report_date = report_date or date.today()
 
-    indices = yfinance_client.get_kr_indices()
+    indices = _best_effort("KOSPI/KOSDAQ (yfinance)", yfinance_client.get_kr_indices)
     fx_rates = exim_client.get_fx_rates()
     rates = fred_client.get_rates()
     oil_prices = eia_client.get_oil_prices()
-    us_indices = yfinance_client.get_us_indices()
-    watchlist = yfinance_client.get_watchlist()
+    us_indices = _best_effort("미국 지수 (yfinance)", yfinance_client.get_us_indices)
+    watchlist = _best_effort("관심 종목 (yfinance)", yfinance_client.get_watchlist)
 
     return {
         "date": report_date.isoformat(),
