@@ -20,8 +20,10 @@ RESEND_API_URL = "https://api.resend.com/emails"
 def send_infographic_email(image_path: Path, report_date: date | None = None) -> None:
     report_date = report_date or date.today()
 
+    # Gmail은 <img src="data:..."> 형태의 base64 인라인 이미지를 렌더링하지 않으므로,
+    # 진짜 첨부파일 + Content-ID 참조(cid:)로 보내야 본문에 이미지가 표시된다.
     image_b64 = base64.b64encode(Path(image_path).read_bytes()).decode("ascii")
-    html = f'<html><body style="margin:0;padding:0;"><img src="data:image/png;base64,{image_b64}" style="width:100%;max-width:1080px;"></body></html>'
+    html = '<html><body style="margin:0;padding:0;"><img src="cid:report_image" style="width:100%;max-width:1080px;"></body></html>'
 
     resp = requests.post(
         RESEND_API_URL,
@@ -34,6 +36,13 @@ def send_infographic_email(image_path: Path, report_date: date | None = None) ->
             "to": [settings.REPORT_TO_EMAIL],
             "subject": f"[KR Market Report] {report_date.isoformat()}",
             "html": html,
+            "attachments": [
+                {
+                    "filename": Path(image_path).name,
+                    "content": image_b64,
+                    "content_id": "report_image",
+                }
+            ],
         },
         timeout=30,
     )
