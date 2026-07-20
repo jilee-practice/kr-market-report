@@ -27,8 +27,8 @@ class Settings:
     KIS_APP_KEY = os.environ.get("KIS_APP_KEY", "")
     KIS_APP_SECRET = os.environ.get("KIS_APP_SECRET", "")
 
-    GMAIL_ADDRESS = os.environ.get("GMAIL_ADDRESS", "")
-    GMAIL_APP_PASSWORD = os.environ.get("GMAIL_APP_PASSWORD", "")
+    RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
+    RESEND_FROM_EMAIL = os.environ.get("RESEND_FROM_EMAIL", "")
     REPORT_TO_EMAIL = os.environ.get("REPORT_TO_EMAIL", "")
 
 

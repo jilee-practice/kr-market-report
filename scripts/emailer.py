@@ -1,40 +1,40 @@
-"""Gmail SMTP(앱 비밀번호)로 인포그래픽 리포트를 발송한다."""
+"""Resend API(HTTPS)로 인포그래픽 리포트를 발송한다.
+
+원래는 Gmail SMTP(587)를 썼지만, 클라우드 예약 에이전트 샌드박스의 아웃바운드
+프록시가 HTTPS(443) 외의 프로토콜/포트를 지원하지 않아 SMTP 자체가 불가능했다.
+Resend는 순수 HTTPS REST API라 동일한 프록시 제약에서도 정상 동작한다.
+"""
 from __future__ import annotations
 
-import smtplib
+import base64
 from datetime import date
-from email.mime.image import MIMEImage
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
 from pathlib import Path
+
+import requests
 
 from .config import settings
 
-SMTP_HOST = "smtp.gmail.com"
-SMTP_PORT = 587
+RESEND_API_URL = "https://api.resend.com/emails"
 
 
 def send_infographic_email(image_path: Path, report_date: date | None = None) -> None:
     report_date = report_date or date.today()
 
-    msg = MIMEMultipart("related")
-    msg["Subject"] = f"[KR Market Report] {report_date.isoformat()}"
-    msg["From"] = settings.GMAIL_ADDRESS
-    msg["To"] = settings.REPORT_TO_EMAIL
+    image_b64 = base64.b64encode(Path(image_path).read_bytes()).decode("ascii")
+    html = f'<html><body style="margin:0;padding:0;"><img src="data:image/png;base64,{image_b64}" style="width:100%;max-width:1080px;"></body></html>'
 
-    body = MIMEText(
-        f'<html><body style="margin:0;padding:0;"><img src="cid:report_image" style="width:100%;max-width:1080px;"></body></html>',
-        "html",
+    resp = requests.post(
+        RESEND_API_URL,
+        headers={
+            "Authorization": f"Bearer {settings.RESEND_API_KEY}",
+            "Content-Type": "application/json",
+        },
+        json={
+            "from": settings.RESEND_FROM_EMAIL,
+            "to": [settings.REPORT_TO_EMAIL],
+            "subject": f"[KR Market Report] {report_date.isoformat()}",
+            "html": html,
+        },
+        timeout=30,
     )
-    msg.attach(body)
-
-    image_bytes = Path(image_path).read_bytes()
-    image = MIMEImage(image_bytes)
-    image.add_header("Content-ID", "<report_image>")
-    image.add_header("Content-Disposition", "inline", filename=Path(image_path).name)
-    msg.attach(image)
-
-    with smtplib.SMTP(SMTP_HOST, SMTP_PORT) as server:
-        server.starttls()
-        server.login(settings.GMAIL_ADDRESS, settings.GMAIL_APP_PASSWORD)
-        server.sendmail(settings.GMAIL_ADDRESS, [settings.REPORT_TO_EMAIL], msg.as_string())
+    resp.raise_for_status()
