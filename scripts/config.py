@@ -27,6 +27,9 @@ class Settings:
     KIS_APP_KEY = os.environ.get("KIS_APP_KEY", "")
     KIS_APP_SECRET = os.environ.get("KIS_APP_SECRET", "")
 
+    TWELVEDATA_API_KEY = os.environ.get("TWELVEDATA_API_KEY", "")
+    FINNHUB_API_KEY = os.environ.get("FINNHUB_API_KEY", "")
+
     RESEND_API_KEY = os.environ.get("RESEND_API_KEY", "")
     RESEND_FROM_EMAIL = os.environ.get("RESEND_FROM_EMAIL", "")
     REPORT_TO_EMAIL = os.environ.get("REPORT_TO_EMAIL", "")
