@@ -39,6 +39,17 @@ def _best_effort(label: str, fn):
         return []
 
 
+def _attach_watchlist_history(watchlist: list) -> None:
+    """Finnhub는 무료 티어에서 과거 시세(캔들)를 안 주므로, Twelve Data에서
+    받은 종가 추이를 워치리스트 종목에 티커 기준으로 붙인다 (스파크라인용)."""
+    if not watchlist:
+        return
+    tickers = {q.ticker: q.label for q in watchlist}
+    history_map = _best_effort("관심 종목 추이 (Twelve Data)", lambda: twelvedata_client.get_history_map(tickers))
+    for q in watchlist:
+        q.history = history_map.get(q.ticker, []) if history_map else []
+
+
 def collect(report_date: date | None = None) -> dict:
     report_date = report_date or date.today()
 
@@ -48,6 +59,8 @@ def collect(report_date: date | None = None) -> dict:
     oil_prices = eia_client.get_oil_prices()
     us_indices = _best_effort("미국 지수 (Twelve Data)", twelvedata_client.get_us_indices)
     watchlist = _best_effort("관심 종목 (Finnhub)", finnhub_client.get_watchlist)
+    _attach_watchlist_history(watchlist)
+    earnings_calendar = _best_effort("실적 발표 일정 (Finnhub)", finnhub_client.get_earnings_calendar)
 
     return {
         "date": report_date.isoformat(),
@@ -57,6 +70,7 @@ def collect(report_date: date | None = None) -> dict:
         "oil_prices": [dataclasses.asdict(o) for o in oil_prices],
         "us_indices": [dataclasses.asdict(q) for q in us_indices],
         "watchlist": [dataclasses.asdict(q) for q in watchlist],
+        "earnings_calendar": [dataclasses.asdict(e) for e in earnings_calendar],
     }
 
 

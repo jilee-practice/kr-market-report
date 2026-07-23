@@ -51,8 +51,33 @@ def _sign_color(change_pct: float | None) -> str:
     return FLAT_COLOR
 
 
-def _badge(label: str, change_pct: float | None, value_str: str | None = None) -> str:
-    """value_str이 있으면 값+등락률을, 없으면 등락률만 크게 보여준다."""
+SPARKLINE_LINE_COLOR = "#c9ccd3"  # de-emphasis: 선 자체는 무채색, 끝점만 방향색(accent)
+
+
+def _sparkline_svg(history: list[float], color: str, width: int = 88, height: int = 26) -> str:
+    """최근 추이를 보여주는 미니 라인차트. 선은 무채색(de-emphasis), 마지막 점만
+    등락 방향색(accent)으로 강조한다 - dataviz 스킬의 stat-tile trend 스펙을 따름."""
+    if len(history) < 2:
+        return ""
+    lo, hi = min(history), max(history)
+    span = (hi - lo) or 1
+    n = len(history)
+    pts = [
+        (i / (n - 1) * width, height - 3 - ((v - lo) / span) * (height - 6))
+        for i, v in enumerate(history)
+    ]
+    path = " ".join(f"{x:.1f},{y:.1f}" for x, y in pts)
+    last_x, last_y = pts[-1]
+    return f"""
+    <svg width="{width}" height="{height}" style="display:block;margin:4px auto 0;">
+      <polyline points="{path}" fill="none" stroke="{SPARKLINE_LINE_COLOR}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+      <circle cx="{last_x:.1f}" cy="{last_y:.1f}" r="3.5" fill="{color}" stroke="#fff" stroke-width="1.5" />
+    </svg>
+    """
+
+
+def _badge(label: str, change_pct: float | None, value_str: str | None = None, history: list[float] | None = None) -> str:
+    """value_str이 있으면 값+등락률을, 없으면 등락률만 크게 보여준다. history가 있으면 스파크라인 추가."""
     color = _sign_color(change_pct)
     value_html = f'<div style="font-weight:700;font-size:14px;color:#111;margin-bottom:2px;">{value_str}</div>' if value_str else ""
     change_str = ""
@@ -60,17 +85,19 @@ def _badge(label: str, change_pct: float | None, value_str: str | None = None) -
         sign = "+" if change_pct > 0 else ""
         pct_size = "16px" if value_str else "20px"
         change_str = f'<div style="color:{color};font-weight:700;font-size:{pct_size};">{sign}{change_pct:.2f}%</div>'
+    sparkline_html = _sparkline_svg(history, color) if history else ""
     return f"""
-    <div style="background:#f7f8fa;border-radius:10px;padding:12px 6px;text-align:center;flex:1;min-width:100px;">
+    <div style="background:#f7f8fa;border-radius:10px;padding:10px 6px;text-align:center;flex:1;min-width:100px;">
       <div style="color:#555;font-size:12px;margin-bottom:4px;">{label}</div>
       {value_html}
       {change_str}
+      {sparkline_html}
     </div>
     """
 
 
 def _badge_row(badges_html: list[str]) -> str:
-    return f'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px;">{"".join(badges_html)}</div>'
+    return f'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px;">{"".join(badges_html)}</div>'
 
 
 def _stat_row(label: str, value_str: str, change_pct: float | None = None) -> str:
@@ -107,9 +134,9 @@ def _card(number: int, icon: str, title: str, color_key: str, body_html: str, sp
     color = CARD_COLORS.get(color_key, CARD_COLORS["blue"])
     col_span = "grid-column: span 2;" if span2 else ""
     return f"""
-    <div style="background:#fff;border-radius:14px;padding:18px 20px;box-shadow:0 1px 3px rgba(0,0,0,0.08);border-top:4px solid {color};{col_span}">
-      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;">
-        <span style="background:{color};color:#fff;width:24px;height:24px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;flex-shrink:0;">{number}</span>
+    <div style="background:#fff;border-radius:14px;padding:14px 16px;box-shadow:0 1px 3px rgba(0,0,0,0.08);border-top:4px solid {color};{col_span}">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+        <span style="background:{color};color:#fff;width:22px;height:22px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;flex-shrink:0;">{number}</span>
         <span style="font-size:16px;font-weight:700;color:#111;">{icon} {title}</span>
       </div>
       {body_html}
@@ -171,7 +198,7 @@ def build_html(market_data: dict, narrative: dict) -> str:
         """
 
     header_html = f"""
-    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:20px;flex-wrap:wrap;">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:14px;flex-wrap:wrap;">
       <div>
         <h1 style="font-size:26px;margin:0;color:#111;">{narrative.get('title', 'KR Market Report')}</h1>
         <div style="font-size:14px;color:#666;margin-top:6px;">{narrative.get('subtitle', '')}</div>
@@ -190,7 +217,7 @@ def build_html(market_data: dict, narrative: dict) -> str:
     us_indices = market_data.get("us_indices", [])
     us_market = narrative.get("us_market", {})
     if us_indices or us_market.get("analysis"):
-        badges = [_badge(q["label"], q["change_pct"]) for q in us_indices]
+        badges = [_badge(q["label"], q["change_pct"], history=q.get("history")) for q in us_indices]
         body = _badge_row(badges) + _paragraph(us_market.get("analysis", ""))
         cards.append(_card(n, "\U0001F1FA\U0001F1F8", "미국 증시가 국내장에 주는 영향", "purple", body))
         n += 1
@@ -199,7 +226,8 @@ def build_html(market_data: dict, narrative: dict) -> str:
     domestic_mood = narrative.get("domestic_mood", {})
     if kr_indices or domestic_mood.get("analysis"):
         badges = [
-            _badge(i["label"], i["change_rate"], value_str=f'{i["price"]:,.2f}') for i in kr_indices
+            _badge(i["label"], i["change_rate"], value_str=f'{i["price"]:,.2f}', history=i.get("history"))
+            for i in kr_indices
         ]
         body = _badge_row(badges) + _paragraph(domestic_mood.get("analysis", ""))
         cards.append(_card(n, "\U0001F1F0\U0001F1F7", "국내 증시 출발 분위기", "green", body))
@@ -211,7 +239,7 @@ def build_html(market_data: dict, narrative: dict) -> str:
         bullets = ""
         if sector and sector.get("bullets"):
             bullets = _checklist(sector["bullets"], icon="✔️")
-        badges = [_badge(q["label"], q["change_pct"]) for q in watchlist]
+        badges = [_badge(q["label"], q["change_pct"], history=q.get("history")) for q in watchlist]
         body = bullets + (_badge_row(badges) if badges else "") + _paragraph((sector or {}).get("analysis", ""))
         title = (sector or {}).get("title", "관심 섹터 핵심 포인트")
         cards.append(_card(n, "\U0001F4BE", title, "orange", body, span2=True))
@@ -235,7 +263,7 @@ def build_html(market_data: dict, narrative: dict) -> str:
         cards.append(_card(n, "⚠️", "체크해야 할 리스크", "red", _risks_list(risks)))
         n += 1
 
-    grid_html = f'<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">{"".join(cards)}</div>'
+    grid_html = f'<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">{"".join(cards)}</div>'
 
     checkpoints = narrative.get("checkpoints", [])
     checkpoints_html = ""
@@ -268,7 +296,7 @@ def build_html(market_data: dict, narrative: dict) -> str:
         </style>
       </head>
       <body>
-        <div style="width:{CANVAS_WIDTH}px;padding:28px;background:#f2f3f6;">
+        <div style="width:{CANVAS_WIDTH}px;padding:22px;background:#f2f3f6;">
           {header_html}
           {grid_html}
           {checkpoints_html}
